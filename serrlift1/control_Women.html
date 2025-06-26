@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8" />
+  <title>Χρονόμετρο Άρσης Βαρών - Control</title>
+  <style>
+    body {
+      background: black;
+      color: white;
+      font-family: sans-serif;
+      margin: 0;
+      padding: 0;
+      text-align: center;
+    }
+    #timer {
+      font-size: 8em;
+      margin: 0.2em 0;
+      transition: color 0.3s;
+    }
+    #timer.red {
+      color: red;
+    }
+    select, input, button {
+      font-size: 1.3em;
+      margin: 0.3em;
+      padding: 0.4em 0.8em;
+    }
+    label {
+      display: inline-block;
+      margin: 0.4em 1em;
+      min-width: 160px;
+      text-align: left;
+    }
+    #barbell {
+      margin: 1em auto;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 60px;
+      max-width: 600px;
+    }
+    .plate {
+      width: 15px;
+      border-radius: 4px;
+      margin: 0 0px !important;
+      box-shadow: inset 0 0 3px 0px #fff;
+      border: 0 !important;
+    }
+    #attemptCircles {
+      margin: 0.7em auto;
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+      align-items: center;
+      max-width: 200px;
+    }
+    .circle {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid white;
+      background-color: transparent;
+      cursor: default;
+    }
+    .circle.valid {
+      background-color: white;
+    }
+    .circle.invalid {
+      background-color: red;
+    }
+    #attemptInfo {
+      font-size: 1.3em;
+      margin-top: 0.5em;
+      min-height: 2em;
+    }
+    #controls {
+      margin-top: 1em;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    #fileInputLabel {
+      display: inline-block;
+      margin: 1em auto;
+      padding: 0.4em 0.8em;
+      background: #444;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    #fileInput {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Χρονόμετρο Άρσης Βαρών - Control</h1>
+
+  <!-- Φόρτωση JSON -->
+  <label id="fileInputLabel" for="fileInput">Φόρτωσε JSON Αθλητριών</label>
+  <input type="file" id="fileInput" accept=".json" />
+  <div>
+
+    <label>Άσκηση:
+      <select id="exerciseSelect" disabled>
+        <option value="Αρασέ">Αρασέ</option>
+        <option value="Επολέ-Ζετέ">Επολέ-Ζετέ</option>
+      </select>
+    </label>
+
+    <label>Αθλήτρια:
+      <select id="athleteSelect" disabled>
+        <option value="">-- Επιλογή --</option>
+      </select>
+    </label>
+
+    <label>Κιλά:
+      <input type="number" id="weightInput" min="1" step="1" disabled />
+    </label>
+  </div>
+  <div id="athleteInfo"></div>
+
+  <div id="attemptInfo"></div>
+
+  <div id="barbell"></div>
+
+  <div id="attemptCircles"></div>
+
+  <div id="timer">00:00</div>
+
+  <div id="controls">
+    <button id="btn1min" disabled>1 ΛΕΠΤΟ</button>
+    <button id="btn2min" disabled>2 ΛΕΠΤΑ</button>
+    <button id="btn5min" disabled>5 ΛΕΠΤΑ</button>
+    <button id="btnPause" disabled>⏸️ ΠΑΥΣΗ / ΣΥΝΕΧΕΙΑ</button>
+    <button id="btnReset" disabled>🛑 RESET</button>
+    <button id="btnValid" disabled>✅ Έγκυρη προσπάθεια</button>
+    <button id="btnInvalid" disabled>❌ Άκυρη προσπάθεια</button>
+  </div>
+
+  <script src="/socket.io.min.js"></script>
+
+  <script>
+
+    const socket = io(); // σύνδεση στο Flask server
+
+    let athleteList = [];
+    let athletesByCategory = {}; 
+    const plateColors = {
+      25: '#c0392b',      // κόκκινο μεγάλο
+      20: '#2980b9',      // μπλε
+      15: '#f1c40f',      // κίτρινο
+      10: '#27ae60',      // πράσινο
+      5:  '#ecf0f1',      // λευκό (μικρό)
+      '2.5c': '#888888',  // γκρι - Ασφάλεια (collar)
+      2.5: '#c0392b',     // κόκκινο μικρό 2.5
+      2: '#2980b9',       // μπλε (έξω από ασφάλεια)
+      1.5: '#f1c40f',     // κίτρινο
+      1: '#27ae60',       // πράσινο
+      0.5: '#ecf0f1'      // λευκό
+    };
+
+    let currentCategory = "";
+    let currentAthlete = "";
+    let club = "";
+    let currentExercise = "";
+    let currentWeight = 0;
+    let attemptsData = {}; 
+    let countdownInterval = null;
+    let remainingSeconds = 0;
+    let isPaused = false;
+    let bestLifts = {}; 
+    let originalAthleteOrder = [];
+
+    // --- Elements ---
+    const fileInput = document.getElementById('fileInput');
+    const athleteSelect = document.getElementById('athleteSelect');
+    const exerciseSelect = document.getElementById('exerciseSelect');
+    const weightInput = document.getElementById('weightInput');
+    const athleteInfoDiv = document.getElementById('athleteInfo');
+    const attemptInfo = document.getElementById('attemptInfo');
+    const barbellEl = document.getElementById('barbell');
+    const attemptCirclesEl = document.getElementById('attemptCircles');
+    const timerEl = document.getElementById('timer');
+
+    const btn1min = document.getElementById('btn1min');
+    const btn2min = document.getElementById('btn2min');
+    const btn5min = document.getElementById('btn5min');
+    const btnPause = document.getElementById('btnPause');
+    const btnReset = document.getElementById('btnReset');
+    const btnValid = document.getElementById('btnValid');
+    const btnInvalid = document.getElementById('btnInvalid');
+
+  
+
+  function broadcastState() {
+
+    socket.emit("state_update", {
+      category: currentCategory,
+      athlete: currentAthlete,
+      club: club,
+      group: "women",
+      exercise: currentExercise,
+      weight: currentWeight,
+      attemptsData: attemptsData,
+      timer: remainingSeconds,
+      timerRunning: countdownInterval !== null,
+      bestLifts: bestLifts,
+      timerPaused: isPaused
+    });
+
+  }
+
+  // --- Φόρτωση JSON αρχείου ---
+  fileInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (!Array.isArray(data)) {
+          alert('Λάθος μορφή JSON: Πρέπει να είναι λίστα από αθλήτριες');
+          return;
+        }
+        athleteList = data;
+        populateAthleteSelect();
+        resetSelections();
+        alert('Το αρχείο φορτώθηκε επιτυχώς!');
+        console.log(data);
+      } catch(err) {
+        alert('Σφάλμα ανάγνωσης JSON: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  // --- Λειτουργίες ---
+
+  function populateAthleteSelect() {
+    athleteSelect.innerHTML = '<option value="">-- Επιλογή --</option>';
+    originalAthleteOrder = [];
+
+    athleteList.forEach((athlete, index) => {
+      const option = document.createElement('option');
+      option.value = index;
+      option.textContent = athlete.name;
+      athleteSelect.appendChild(option);
+      originalAthleteOrder.push(option.cloneNode(true)); 
+    });
+    athleteSelect.disabled = false;
+  }
+
+  function updateAthleteList() {
+    athleteSelect.innerHTML = '<option value="">-- Επιλογή --</option>';
+    if (athletesByCategory[currentCategory]) {
+      for (const athlete of athletesByCategory[currentCategory]) {
+        const option = document.createElement('option');
+        option.value = athlete;
+        option.textContent = athlete;
+        athleteSelect.appendChild(option);
+      }
+      athleteSelect.disabled = false;
+      weightInput.disabled = true;
+    } else {
+      athleteSelect.disabled = true;
+      weightInput.disabled = true;
+    }
+    currentAthlete = "";
+    currentExercise = "";
+    currentWeight = 0;
+    updateUI();
+    broadcastState();
+  }
+
+  function resetSelections() {
+    currentAthlete = "";
+    currentExercise = "";
+    currentWeight = 0;
+    athleteSelect.value = "";
+    athleteSelect.disabled = true; 
+    exerciseSelect.value = "";
+    exerciseSelect.disabled = false;
+    weightInput.value = "";
+    weightInput.disabled = true;
+    athleteInfoDiv.innerHTML = "";
+    resetTimer();
+    updateUI();
+    broadcastState();
+  }
+
+  function resetTimer() {
+    clearInterval(countdownInterval);
+    countdownInterval = null;
+    remainingSeconds = 0;
+    isPaused = false;
+    timerEl.textContent = "00:00";
+    timerEl.classList.remove('red');
+    btnPause.disabled = true;
+    broadcastState();
+  }
+
+  function updateDisplayTimer(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    timerEl.textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    timerEl.classList.toggle('red', seconds <= 10 && seconds > 0);
+  }
+
+ function calculatePlates(weight) {
+    
+    let barWeight = 15;
+    
+    if (!weight || weight < barWeight) return { inside: [], outside: [], collar: true };
+
+    let perSide = (weight - barWeight) / 2;
+
+    const insidePlatesList = [25, 20, 15, 10, 5, 2.5];
+    const outsidePlatesList = [2, 1.5, 1, 0.5];
+    const inside = [];
+    const outside = [];
+
+    if (perSide >= 2.5) {
+      perSide -= 2.5;
+    } else {
+      return { inside: [], outside: [], collar: false };
+    }
+
+    for (const plate of insidePlatesList) {
+      while (perSide >= plate - 0.001) {
+        inside.push(plate);
+        perSide -= plate;
+      }
+    }
+
+    for (const plate of outsidePlatesList) {
+      while (perSide >= plate - 0.001) {
+        outside.push(plate);
+        perSide -= plate;
+      }
+    }
+
+    return { inside, outside, collar: true };
+  }
+
+  function renderBarbell(weight) {
+    barbellEl.innerHTML = "";
+    if (!weight || weight < 20) return;
+
+    const { inside, outside, collar } = calculatePlates(weight);
+
+    function createPlate(w) {
+      const div = document.createElement('div');
+      div.className = 'plate';
+      div.style.backgroundColor = plateColors[w] || '#888';
+      div.style.height = `${30 + w * 2}px`;
+      div.title = `${w} κιλά`;
+      div.style.border = `2px solid #111`;
+      div.style.margin = '0 4px';
+      return div;
+    }
+
+    // Μπάρα (shaft)
+    const shaft = document.createElement('div');
+    shaft.style.width = '50px';
+    shaft.style.height = '20px';
+    shaft.style.background = '#888';
+    barbellEl.appendChild(shaft);
+
+    // Δεξιά πλευρά μόνο
+    const rightSide = document.createElement('div');
+    rightSide.style.display = 'flex';
+    rightSide.style.alignItems = 'center';
+
+    // Μεγάλες πλάκες (μέσα από ασφάλεια)
+    inside.forEach(p => rightSide.appendChild(createPlate(p)));
+
+    // Ασφάλεια ή αν δεν υπάρχει, 2.5 μικρό
+    if (collar) {
+      const collarRight = document.createElement('div');
+      collarRight.className = 'plate';
+      collarRight.style.backgroundColor = plateColors['2.5c']; // ασφάλεια
+      collarRight.style.height = '35px';
+      collarRight.style.width = '15px';
+      collarRight.style.margin = '0 6px';
+      collarRight.style.border = '2px solid #111';
+      collarRight.title = 'Ασφάλεια 2.5 kg';
+      rightSide.appendChild(collarRight);
+    }
+
+    // Μικρές πλάκες (έξω από ασφάλεια)
+    outside.forEach(p => rightSide.appendChild(createPlate(p)));
+
+    barbellEl.appendChild(rightSide);
+  }
+
+
+  function updateAttemptInfo() {
+    if (!currentAthlete || !currentExercise) {
+      attemptInfo.textContent = "";
+      return;
+    }
+    const key = `${currentAthlete}_${currentExercise}`;
+    const attempts = attemptsData[key] || [];
+    if (attempts.length >= 3) {
+      attemptInfo.textContent = `Έγιναν οι 3 προσπάθειες για τον ${currentAthlete} στο ${currentExercise}`;
+    } else {
+      attemptInfo.textContent = `Προσπάθεια ${attempts.length + 1} από 3`;
+    }
+  }
+
+  function renderAttemptCircles() {
+  attemptCirclesEl.innerHTML = "";
+  if (!currentAthlete || !currentExercise) return;
+  const key = `${currentAthlete}_${currentExercise}`;
+  const attempts = attemptsData[key] || [];
+  for (let i = 0; i < 3; i++) {
+    const circle = document.createElement('div');
+    circle.className = 'circle';
+    const attempt = attempts[i];
+    if (attempt?.result === 'valid') {
+      circle.classList.add('valid');
+    } else if (attempt?.result === 'invalid') {
+      circle.classList.add('invalid');
+    }
+    attemptCirclesEl.appendChild(circle);
+  }
+}
+
+
+  function updateUI() {
+    
+    athleteSelect.disabled = false;
+     exerciseSelect.disabled = !currentAthlete;
+    weightInput.disabled = !currentAthlete;
+
+    btn1min.disabled = !currentWeight;
+    btn2min.disabled = !currentWeight;
+    btn5min.disabled = !currentWeight;
+    btnPause.disabled = !countdownInterval;
+    btnReset.disabled = countdownInterval === null && remainingSeconds === 0;
+    btnValid.disabled = countdownInterval === null || !currentAthlete || !currentExercise || attemptsData[`${currentAthlete}_${currentExercise}`]?.length >= 3;
+    btnInvalid.disabled = btnValid.disabled;
+
+    updateAttemptInfo();
+    renderAttemptCircles();
+    renderBarbell(currentWeight);
+    updateAthleteListStyling();
+  }
+
+  function updateAthleteListStyling() {
+    const completed = [];
+    const remaining = [];
+    const selectedValue = athleteSelect.value;
+
+    originalAthleteOrder.forEach(option => {
+      const index = option.value;
+      const name = athleteList[index]?.name;
+      const key = `${name}_${currentExercise}`;
+      const attempts = attemptsData[key] || [];
+      const newOption = option.cloneNode(true);
+
+      if (attempts.length >= 3) {
+        newOption.style.color = 'red';
+        completed.push(newOption);
+      } else {
+        newOption.style.color = '';
+        remaining.push(newOption);
+      }
+
+      // Αν είναι ο τρέχων αθλητής, τον επιλέγω
+      if (index === selectedValue) {
+        newOption.selected = true;
+      }
+
+    });
+
+    athleteSelect.innerHTML = '<option value="">-- Επιλογή --</option>';
+    [...remaining, ...completed].forEach(opt => athleteSelect.appendChild(opt));
+  }
+
+
+  athleteSelect.addEventListener('change', () => {
+    const index = athleteSelect.value;
+    if (index !== "") {
+      currentAthlete = athleteList[index].name;
+      club = athleteList[index].club;
+      athleteInfoDiv.innerHTML =
+          `<strong>Ονοματεπώνυμο:</strong> ${currentAthlete}<br><strong>Σύλλογος:</strong> ${club}`;
+    } else {
+      currentAthlete = "";
+      club = "";
+      athleteInfoDiv.innerHTML = "";
+    }
+
+    weightInput.disabled = !currentAthlete;
+    exerciseSelect.value = "";
+
+    resetTimer();
+    updateUI();
+    broadcastState();
+  });
+
+  exerciseSelect.addEventListener('change', () => {
+    if (!exerciseSelect.value) return;
+
+    if (currentExercise && currentExercise !== exerciseSelect.value) {
+      const allDone = athleteList.every(a => {
+        const key = `${a.name}_${currentExercise}`;
+        return (attemptsData[key]?.length || 0) >= 3;
+      });
+      if (!allDone) {
+        alert("Δεν έχουν ολοκληρωθεί οι προσπάθειες όλων των αθλητριών για την προηγούμενη άσκηση.");
+        exerciseSelect.value = currentExercise;
+        return;
+      }
+    }
+
+    currentExercise = exerciseSelect.value;
+
+    // Μόλις γίνει η αρχική επιλογή άσκησης, την κλειδώνω
+    exerciseSelect.disabled = true;
+    athleteSelect.disabled = false;
+
+    resetTimer();
+    updateUI();
+    broadcastState();
+  });
+
+  weightInput.addEventListener('input', () => {
+    const val = parseFloat(weightInput.value);
+    if (isNaN(val) || val < 20) {
+      currentWeight = 0;
+    } else {
+      currentWeight = val;
+    }
+    updateUI();
+    broadcastState();
+  });
+
+  function startTimer(seconds) {
+    if (countdownInterval) clearInterval(countdownInterval);
+    remainingSeconds = seconds;
+    isPaused = false;
+    updateDisplayTimer(remainingSeconds);
+    countdownInterval = setInterval(() => {
+      if (!isPaused) {
+        remainingSeconds--;
+        updateDisplayTimer(remainingSeconds);
+        if (remainingSeconds <= 0) {
+          clearInterval(countdownInterval);
+          countdownInterval = null;
+          btnPause.disabled = true;
+          timerEl.classList.remove('red');
+          broadcastState();
+          alert('Ο χρόνος τελείωσε!');
+        }
+        broadcastState();
+      }
+    }, 1000);
+    btnPause.disabled = false;
+    btnReset.disabled = false;
+    updateUI();
+  }
+
+  btn1min.addEventListener('click', () => startTimer(60));
+  btn2min.addEventListener('click', () => startTimer(120));
+  btn5min.addEventListener('click', () => startTimer(300));
+
+  btnPause.addEventListener('click', () => {
+    if (!countdownInterval) return;
+    isPaused = !isPaused;
+    btnPause.textContent = isPaused ? "▶️ Συνέχεια" : "⏸️ Πάυση";
+    broadcastState();
+  });
+
+  btnReset.addEventListener('click', () => {
+    resetTimer();
+    btnPause.textContent = "⏸️ Πάυση";
+  });
+
+  btnValid.addEventListener('click', () => {
+    if (!currentAthlete || !currentExercise) return;
+    const key = `${currentAthlete}_${currentExercise}`;
+    if (!attemptsData[key]) attemptsData[key] = [];
+    if (attemptsData[key].length >= 3) {
+      alert('Έχουν γίνει ήδη 3 προσπάθειες!');
+      return;
+    }
+    attemptsData[key].push({ weight: currentWeight, result: 'valid' });
+
+   
+    if (!bestLifts[currentAthlete]) bestLifts[currentAthlete] = {};
+    bestLifts[currentAthlete][currentExercise] = currentWeight;
+
+    resetTimer();
+    updateUI();
+    broadcastState();
+  });
+
+  btnInvalid.addEventListener('click', () => {
+    if (!currentAthlete || !currentExercise) return;
+    const key = `${currentAthlete}_${currentExercise}`;
+    if (!attemptsData[key]) attemptsData[key] = [];
+    if (attemptsData[key].length >= 3) {
+      alert('Έχουν γίνει ήδη 3 προσπάθειες!');
+      return;
+    }
+    attemptsData[key].push({ weight: currentWeight, result: 'invalid' });
+    resetTimer();
+    updateUI();
+    broadcastState();
+  });
+
+</script>
+
+</body>
+</html>

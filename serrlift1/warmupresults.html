@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8">
+  <title>Κατάταξη Αθλητών</title>
+  <style>
+    body {
+      background: black;
+      color: white;
+      font-family: sans-serif;
+      text-align: center;
+      padding: 1em;
+    }
+    table {
+      margin: auto;
+      border-collapse: collapse;
+      width: 80%;
+    }
+    th, td {
+      border: 1px solid white;
+      padding: 10px;
+    }
+    th {
+      background: #444;
+    }
+    tr:nth-child(even) {
+      background: #222;
+    }
+    h1 {
+      margin-bottom: 0.5em;
+    }
+  </style>
+</head>
+<body>
+  <h1>Ζωντανή Κατάταξη Αθλητών/Αθλητριών</h1>
+  <div id="rankingArea">
+    <p>Αναμονή για δεδομένα...</p>
+  </div>
+
+  <script src="/socket.io.min.js"></script>
+  <script>
+
+    const socket = io(); 
+
+    socket.on("state_broadcast", (data) => {
+      const attemptsData = data.attemptsData || {};
+      const allNames = new Set();
+      for (const key in attemptsData) {
+        const [name, exercise] = key.split('_');
+        allNames.add(name);
+      }
+
+      const ranking = [];
+
+      for (const name of allNames) {
+        const araseAttempts = (attemptsData[`${name}_Αρασέ`] || []);
+        const zeteAttempts = (attemptsData[`${name}_Επολέ-Ζετέ`] || []);
+
+        const arase = Math.max(...araseAttempts.filter(a => a.result === 'valid').map(a => a.weight), 0);
+        const zete = Math.max(...zeteAttempts.filter(a => a.result === 'valid').map(a => a.weight), 0);
+        const total = arase + zete;
+
+        ranking.push({ name, arase, zete, total });
+      }
+
+      ranking.sort((a, b) => b.total - a.total);
+
+      let html = `
+        <table>
+          <thead>
+            <tr>
+              <th>Θέση</th>
+              <th>Αθλητής</th>
+              <th>Αρασέ</th>
+              <th>Επολέ-Ζετέ</th>
+              <th>Σύνολο</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      ranking.forEach((athlete, i) => {
+        html += `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${athlete.name}</td>
+            <td>
+        `;
+
+        const renderAttempts = (key) => {
+          const attempts = attemptsData[key] || [];
+          return attempts.map(att => {
+            const color = att.result === 'valid' ? 'white' : 'red';
+            const text = att.weight;
+            return `<span style="background:${color};color:black;padding:4px 8px;margin:2px;border-radius:6px;display:inline-block;">${text}</span>`;
+            }).join('');
+        };
+
+        html += renderAttempts(`${athlete.name}_Αρασέ`) + `</td><td>`;
+        html += renderAttempts(`${athlete.name}_Επολέ-Ζετέ`) + `</td><td><strong>${athlete.total}</strong></td></tr>`;
+      });
+
+      html += `</tbody></table>`;
+      document.getElementById('rankingArea').innerHTML = html;
+    });
+
+  </script>
+</body>
+</html>
+

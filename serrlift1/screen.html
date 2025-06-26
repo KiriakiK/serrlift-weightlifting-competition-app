@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8" />
+  <title>Οθόνη Αθλητών - Άρση Βαρών</title>
+  <style>
+    body {
+      margin: 0;
+      background-color: black;
+      color: white;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #timer.green {
+      color: #2ecc71; 
+    }
+
+    #mainLayout {
+      display: grid;
+      grid-template-columns: 1fr 2fr 1fr;
+      grid-template-rows: auto;
+      width: 100%;
+      height: 100vh;
+      padding: 2em;
+      box-sizing: border-box;
+      gap: 1em;
+    }
+
+    /* Αριστερό πάνελ */
+    #leftPanel {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: flex-start;
+      font-size: 1.5em;
+      gap: 0.5em;
+    }
+
+    #athleteName {
+      font-size: 2.5em;
+      font-weight: bold;
+    }
+
+    #club {
+      font-size: 1.2em;
+      color: #ccc;
+    }
+
+    #info {
+      font-size: 1.2em;
+      color: #ccc;
+    }
+
+    #attemptInfo {
+      font-size: 1em;
+      color: #aaa;
+    }
+
+    #bigWeight {
+  font-size: 3em;
+  font-weight: bold;
+  color: #f1c40f;
+  margin-top: auto;
+}
+
+
+    /* Κεντρικό πάνελ - Μπάρα */
+    #centerPanel {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #barbell {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      max-width: 1000px;
+      height: 35vh; 
+      transform: scale(1.5); 
+      transform-origin: center;
+    }
+
+
+    .plate {
+      width: 10px;
+      border-radius: 4px;
+      box-shadow: inset 0 0 3px 0px #fff;
+      border: 0;
+    }
+
+    /* Δεξί πάνελ */
+    #rightPanel {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 1em;
+    }
+
+    #timer {
+      font-size: 7em;
+      font-weight: 900;
+      transition: color 0.3s;
+    }
+
+    #timer.red {
+      color: #e74c3c;
+    }
+
+    #attemptCircles {
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .circle {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 3px solid white;
+      background-color: transparent;
+    }
+
+    .circle.valid {
+      background-color: white;
+    }
+
+    .circle.invalid {
+      background-color: #e74c3c;
+    }
+  </style>
+</head>
+<body>
+  <div id="mainLayout">
+    <!-- Αριστερή Πλευρά -->
+    <div id="leftPanel">
+      <div id="athleteName">—</div>
+      <div id="club">—</div>
+      <div id="info"><span id="exercise">—</span></div>
+      <div id="attemptInfo"></div>
+      <div id="bigWeight">—</div> 
+    </div>
+
+    <!-- Κέντρο -->
+    <div id="centerPanel">
+      <div id="barbell"></div>
+    </div>
+
+    <!-- Δεξιά Πλευρά -->
+    <div id="rightPanel">
+      <div id="attemptCircles"></div>
+      <div id="timer">00:00</div>
+    </div>
+  </div>
+  
+  <audio id="beepSound" preload="auto">
+    <source src="/beep_short.ogg" type="audio/ogg">
+  </audio>
+
+  <script src="/socket.io.min.js"></script>
+
+  <script>
+
+    const socket = io();
+
+    const plateColors = {
+      25: '#c0392b',
+      20: '#2980b9',
+      15: '#f1c40f',
+      10: '#27ae60',
+      5:  '#ecf0f1',
+      '2.5c': '#888888',
+      2.5: '#c0392b',
+      2: '#2980b9',
+      1.5: '#f1c40f',
+      1: '#27ae60',
+      0.5: '#ecf0f1'
+    };
+
+    const athleteNameEl = document.getElementById('athleteName');
+    const clubEl = document.getElementById('club');
+    const exerciseEl = document.getElementById('exercise');
+    const weightEl = document.getElementById('weight');
+    const timerEl = document.getElementById('timer');
+    const barbellEl = document.getElementById('barbell');
+    const attemptCirclesEl = document.getElementById('attemptCircles');
+    const bigWeightEl = document.getElementById('bigWeight');
+
+    let group = "";
+    let lastState = {};
+    let isFiveMinuteMode = false;
+
+    const beepSound = document.getElementById('beepSound');
+    let lastBeepTime = null;
+
+    function playBeep() {
+      beepSound.currentTime = 0;
+      beepSound.play();
+    }
+
+    socket.on('state_broadcast', (data) => {
+      if (JSON.stringify(data) !== JSON.stringify(lastState)) {
+        lastState = data;
+        updateDisplay(data);
+      }
+    });
+
+    function updateDisplay(data) {
+      //console.log(data);
+      group = data.group;
+      athleteNameEl.textContent = data.athlete || '—';
+      clubEl.textContent = data.club || '—';
+      exerciseEl.textContent = data.exercise || '—';
+      bigWeightEl.textContent = data.weight && data.weight >= 20 ? Math.floor(data.weight) + ' kg' : '—';
+      updateAttemptInfo(data.attemptsData, data.athlete, data.exercise);
+
+      if (typeof data.timer === 'number') {
+        const m = Math.floor(data.timer / 60);
+        const s = data.timer % 60;
+        timerEl.textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+        timerEl.classList.toggle('red', data.timer <= 10 && data.timer > 0 && !data.timerPaused);
+        timerEl.classList.toggle('green', data.timerPaused);
+
+        // Αναπαραγωγή ήχου σε 1:30, 0:30, 0:00
+        const t = data.timer;
+        const triggerTimes = [90, 30, 0];
+
+        if (triggerTimes.includes(t) && lastBeepTime !== t) {
+          playBeep();
+          lastBeepTime = t;
+        }
+      } else {
+        timerEl.textContent = "00:00";
+        timerEl.classList.remove('red');
+      }
+
+      renderBarbell(data.weight);
+      renderAttemptCircles(data.attemptsData, data.athlete, data.exercise);
+     
+      // Αν ξεκινάει χρονόμετρο 5 λεπτών, ενεργοποιούμε την ειδική λειτουργία
+      if (data.timerRunning && data.timer === 299) {
+        isFiveMinuteMode = true;
+      }
+
+      if (!data.timerRunning || data.timer === 0) {
+        isFiveMinuteMode = false;
+      }
+
+      const leftPanel = document.getElementById('leftPanel');
+      const centerPanel = document.getElementById('centerPanel');
+      const attemptCircles = document.getElementById('attemptCircles');
+
+      if (isFiveMinuteMode) {
+    
+        leftPanel.style.display = 'none';
+        centerPanel.style.display = 'none';
+        attemptCircles.style.display = 'none';
+        timerEl.style.position = 'fixed';
+        timerEl.style.top = '50%';
+        timerEl.style.left = '50%';
+        timerEl.style.transform = 'translate(-50%, -50%)';
+        timerEl.style.fontSize = '15em';
+
+      } else {
+  
+        leftPanel.style.display = '';
+        centerPanel.style.display = '';
+        attemptCircles.style.display = '';
+        timerEl.style = null;
+        timerEl.classList.remove('red', 'green');
+
+      }
+
+    }
+
+    function calculatePlates(weight) {
+      
+      let barWeight = 0;
+
+      if (group === "women") {
+        barWeight = 15;
+      } else if (group === "men") {
+        barWeight = 20;
+      }
+    
+      if (!weight || weight < barWeight) return { inside: [], outside: [], collar: true };
+
+      let perSide = (weight - barWeight) / 2;
+      const insidePlatesList = [25, 20, 15, 10, 5, 2.5];
+      const outsidePlatesList = [2, 1.5, 1, 0.5];
+      const inside = [], outside = [];
+
+      if (perSide >= 2.5) {
+        perSide -= 2.5;
+      } else {
+        return { inside: [], outside: [], collar: false };
+      }
+
+      for (const plate of insidePlatesList) {
+        while (perSide >= plate - 0.001) {
+          inside.push(plate);
+          perSide -= plate;
+        }
+      }
+
+      for (const plate of outsidePlatesList) {
+        while (perSide >= plate - 0.001) {
+          outside.push(plate);
+          perSide -= plate;
+        }
+      }
+
+      return { inside, outside, collar: true };
+    }
+
+    function renderBarbell(weight) {
+      barbellEl.innerHTML = "";
+      if (!weight || weight < 20) return;
+
+      const { inside, outside, collar } = calculatePlates(weight);
+
+      function createPlate(w) {
+
+        const insidePlatesList = [25, 20, 15, 10];
+        const outsidePlatesList = [5, 2.5, 2, 1.5, 1, 0.5];
+
+        const div = document.createElement('div');
+        div.className = 'plate';
+        div.style.backgroundColor = plateColors[w] || '#888';
+        if (insidePlatesList.includes(w)) {
+          div.style.height = '160px';
+        div.style.width = `${w}px`; 
+        } else {
+          div.style.height = `${20 * w + 20}px`;
+          div.style.width = `${w + 8}px`; 
+        }
+        
+        div.style.margin = '0 0px';
+        div.title = `${w} κιλά`;
+        return div;
+      }
+
+      const shaft1 = document.createElement('div');
+      shaft1.style.width = '75px';
+      shaft1.style.height = '14px';
+      shaft1.style.background = '#888';
+      shaft1.style.boxShadow = 'inset 0 0 9px 0px #fff';
+      barbellEl.appendChild(shaft1);
+
+      const shaft2 = document.createElement('div');
+      shaft2.style.width = '20px';
+      shaft2.style.height = '40px';
+      shaft2.style.background = '#888';
+      shaft2.style.boxShadow = 'inset 0 0 9px 0px #fff';
+      barbellEl.appendChild(shaft2);
+
+      const rightSide = document.createElement('div');
+      rightSide.style.display = 'flex';
+      rightSide.style.alignItems = 'center';
+
+      inside.forEach(p => rightSide.appendChild(createPlate(p)));
+
+      if (collar) {
+        const collarRight = document.createElement('div');
+        collarRight.className = 'plate';
+        collarRight.style.backgroundColor = plateColors['2.5c'];
+        collarRight.style.height = '30px';
+        collarRight.style.width = '15px';
+        collarRight.style.border = '2px solid #111';
+        collarRight.title = 'Ασφάλεια 2.5 kg';
+        rightSide.appendChild(collarRight);
+      }
+
+      outside.forEach(p => rightSide.appendChild(createPlate(p)));
+
+      barbellEl.appendChild(rightSide);
+
+      const shaft3 = document.createElement('div');
+      shaft3.style.width = '40px';
+      shaft3.style.height = '14px';
+      shaft3.style.background = '#888';
+      shaft3.style.boxShadow = 'inset 0 0 9px 0px #fff';
+      barbellEl.appendChild(shaft3);
+    }
+
+    function renderAttemptCircles(attemptsData, athlete, exercise) {
+
+      attemptCirclesEl.innerHTML = "";
+      if (!athlete || !exercise) return;
+
+      const key = `${athlete}_${exercise}`;
+      const attempts = (attemptsData && attemptsData[key]) || [];
+
+      for (let i = 0; i < 3; i++) {
+        const circle = document.createElement('div');
+        circle.className = 'circle';
+        const att = attempts[i];
+        if (att?.result === 'valid') {
+          circle.classList.add('valid');
+        } else if (att?.result === 'invalid') {
+          circle.classList.add('invalid');
+        }
+        attemptCirclesEl.appendChild(circle);
+      }
+    }
+
+
+    function updateAttemptInfo(attemptsData, athlete, exercise) {
+
+      const attemptInfoEl = document.getElementById('attemptInfo');
+      attemptInfoEl.textContent = '';
+      if (!athlete || !exercise) return;
+
+      const key = `${athlete}_${exercise}`;
+      const attempts = (attemptsData && attemptsData[key]) || [];
+
+      const nextAttempt = attempts.length + 1;
+
+      if (attempts.length >= 3) {
+        attemptInfoEl.textContent = '';
+      } else {
+        if ((attempts.length + 1) === 2) {
+          attemptInfoEl.textContent = `${attempts.length + 1}nd attempt`;
+        } else {
+          attemptInfoEl.textContent = `${attempts.length + 1}st attempt`;
+        }
+      }
+    }
+
+  </script>
+
+<button onclick="enableSound()" id="soundBtn" style="position: absolute; top: 1em; left: 1em; font-size: 1.2em; z-index: 9999;">Ενεργοποίηση Ήχου</button>
+<script>
+  function enableSound() {
+    const beep = document.getElementById('beepSound');
+    beep.play().then(() => {
+      document.getElementById('soundBtn').style.display = 'none';
+    }).catch(err => {
+      alert("Ο ήχος μπλοκαρίστηκε. Αγγίξτε οθόνη ή πατήστε το κουμπί.");
+    });
+  }
+</script>
+
+</body>
+</html>
