@@ -9,3 +9,12 @@ Live Πληροφοριακό Σύστημα Αγώνων Άρσης Βαρών 
 <li>Results client: καταγραφή προσπαθειών (έγκυρες/άκυρες με χρωματική επισήμανση) και αυτόματη ενημέρωση κατάταξης</li></ul>
 <b>Τεχνολογίες:</b> Python, Flask, HTML, JavaScript, Socket.IO, JSON <br>
 <b>Αρχιτεκτονική:</b> Τοπικό δίκτυο μέσω router (offline setup) – οι clients επικοινωνούν μέσω IP μέσω browser
+
+### Control Panel (Men/Women)
+![Control screen](./images/controlmen.png)
+
+### Screen View
+![Screen display](./images/screen.png)
+
+### Results View
+![Results view](./images/results.png)
