@@ -1,4 +1,18 @@
-# serrlift-weightlifting-competition-app
+# serrlift-weightlifting-competition-app - EN
+Live Weightlifting Competition System (Offline Web App) – Flask, HTML/JS
+
+Personal project developed for use in official weightlifting competitions in Greece, enabling live tracking and athlete management during events.
+<ul><li>A complete control and display system built to function entirely offline via a local router network.</li>
+<li>Python backend using Flask + Flask-SocketIO, managing local JSON data for athletes and clubs. Communication is handled via WebSockets (socket.io) with four custom-built HTML/JavaScript clients.</li>  
+<li>Control Clients (Men/Women): Select athletes, assign weights, track lift attempts (up to 3 per movement), manage countdown timer with audio alerts, and display dynamic barbell weight graph.</li>
+<li>Screen Client: Public display for audience and organizers with live event data.</li>
+<li>Results Client: Tracks successful/failed attempts with color-coded indicators and automatically updates athlete rankings.</li></ul>
+<b>Technologies:</b> Python, Flask, HTML, JavaScript, Socket.IO, JSON <br>
+<b>Architecture:</b> Τοπικό δίκτυο μέσω router (offline setup) – οι clients επικοινωνούν μέσω IP μέσω browser
+<br><br>
+<b>* Language Note:</b> All button labels and input fields in the screenshots are in Greek, as the app was designed for use in national events held in Greece.
+
+# serrlift-weightlifting-competition-app -EL
 Live Πληροφοριακό Σύστημα Αγώνων Άρσης Βαρών (Offline Web App) - Flask, HTML/JS
 
 Προσωπικό project για χρήση σε αγώνες άρσης βαρών με live παρακολούθηση και διαχείριση αθλητών
