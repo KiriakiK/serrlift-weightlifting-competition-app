@@ -8,7 +8,7 @@ Personal project developed for use in official weightlifting competitions in Gre
 <li>Screen Client: Public display for audience and organizers with live event data.</li>
 <li>Results Client: Tracks successful/failed attempts with color-coded indicators and automatically updates athlete rankings.</li></ul>
 <b>Technologies:</b> Python, Flask, HTML, JavaScript, Socket.IO, JSON <br>
-<b>Architecture:</b> Τοπικό δίκτυο μέσω router (offline setup) – οι clients επικοινωνούν μέσω IP μέσω browser
+<b>Architecture:</b> Fully offline setup via local router – all devices communicate through IP-based access in the browser.
 <br><br>
 <b>* Language Note:</b> All button labels and input fields in the screenshots are in Greek, as the app was designed for use in national events held in Greece.
 
